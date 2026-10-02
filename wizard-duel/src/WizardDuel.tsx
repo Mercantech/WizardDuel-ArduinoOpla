@@ -92,17 +92,17 @@ export default function WizardDuel() {
   
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
-  const bridgeHostRef = useRef<string>('');
+  const apiBaseRef = useRef<string>('');
 
   const addLog = (message: string, type: LogEntry['type'] = 'info') => {
     setLogs(prev => [...prev.slice(-19), { message, time: Date.now(), type }]);
   };
 
-  // API calls til bridge
+  // API calls til bridge (same-origin i produktion)
   const api = {
     startGame: async () => {
       try {
-        const res = await fetch(`http://${bridgeHostRef.current}/start-game`, { method: 'POST' });
+        const res = await fetch(`${apiBaseRef.current}/start-game`, { method: 'POST' });
         const data = await res.json();
         if (!data.success) {
           addLog(`Kunne ikke starte: ${data.message}`, 'system');
@@ -114,7 +114,7 @@ export default function WizardDuel() {
     
     newGame: async () => {
       try {
-        await fetch(`http://${bridgeHostRef.current}/new-game`, { method: 'POST' });
+        await fetch(`${apiBaseRef.current}/new-game`, { method: 'POST' });
         setWinner(null);
       } catch (e) {
         addLog('Fejl ved nyt spil', 'system');
@@ -125,12 +125,31 @@ export default function WizardDuel() {
   // WebSocket connection
   useEffect(() => {
     const qs = new URLSearchParams(window.location.search);
-    const bridgeHost = qs.get("bridge") || `${window.location.hostname}:3000`;
-    bridgeHostRef.current = bridgeHost;
+    const bridgeOverride = qs.get("bridge");
+
+    // Same-origin: browser URL beholder /Wizard (Traefik StripPrefix til backend)
+    const pathMatch = window.location.pathname.match(/^(\/Wizard)(?=\/|$)/);
+    const basePath = pathMatch ? pathMatch[1] : '';
+
+    let httpBase: string;
+    let wsUrl: string;
+
+    if (bridgeOverride) {
+      const proto = window.location.protocol === 'https:' ? 'https' : 'http';
+      const wsProto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+      httpBase = `${proto}://${bridgeOverride}`;
+      wsUrl = `${wsProto}://${bridgeOverride}/ws`;
+    } else {
+      httpBase = basePath || '';
+      const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      wsUrl = `${wsProto}//${window.location.host}${basePath}/ws`;
+    }
+
+    apiBaseRef.current = httpBase;
 
     const connect = () => {
-      console.log("Connecting to WebSocket:", `ws://${bridgeHost}/ws`);
-      const ws = new WebSocket(`ws://${bridgeHost}/ws`);
+      console.log("Connecting to WebSocket:", wsUrl);
+      const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
       ws.onopen = () => {

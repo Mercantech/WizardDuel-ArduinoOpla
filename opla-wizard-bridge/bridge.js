@@ -1,9 +1,14 @@
 const express = require("express");
 const http = require("http");
+const path = require("path");
+const fs = require("fs");
 const cors = require("cors");
 const WebSocket = require("ws");
 
 const PORT = process.env.PORT || 3000;
+const PUBLIC_DIR = process.env.PUBLIC_DIR
+  ? path.resolve(process.env.PUBLIC_DIR)
+  : path.join(__dirname, "public");
 
 const app = express();
 app.use(cors());
@@ -174,116 +179,144 @@ setInterval(() => {
 // API ENDPOINTS
 // ===========================================
 
-// Health check
-app.get("/health", (_req, res) => res.json({ ok: true }));
-
-// Arduino joins queue
-app.post("/join-queue", (req, res) => {
-  const { deviceId } = req.body || {};
+function doJoinQueue(deviceId) {
   if (!deviceId) {
-    return res.status(400).json({ success: false, message: "Missing deviceId" });
+    return { status: 400, body: { success: false, ok: false, message: "Missing deviceId" } };
   }
 
-  // Allerede i kø?
   if (isInQueue(deviceId)) {
     const pos = getQueuePosition(deviceId);
-    // Opdater heartbeat
     queue[pos].lastHeartbeat = Date.now();
-    return res.json({ success: true, inQueue: true, position: pos + 1 });
+    return {
+      status: 200,
+      body: {
+        success: true,
+        ok: true,
+        inQueue: true,
+        position: pos + 1,
+        playerId: deviceId,
+      },
+    };
   }
 
-  // Allerede i spil?
   if (isPlaying(deviceId)) {
     const wizardId = getWizardIdByDevice(deviceId);
     players[wizardId].lastHeartbeat = Date.now();
-    return res.json({ success: true, inGame: true, wizardId });
+    return {
+      status: 200,
+      body: {
+        success: true,
+        ok: true,
+        inGame: true,
+        wizardId,
+        playerId: deviceId,
+      },
+    };
   }
 
-  // Tilføj til kø
   queue.push({ deviceId, lastHeartbeat: Date.now() });
   const position = queue.length;
-  
+
   console.log(`${deviceId} joined queue at position ${position}`);
   broadcast({ type: "queue-joined", deviceId, position });
   broadcastState();
-  
-  res.json({ success: true, inQueue: true, position });
-});
 
-// Arduino heartbeat - holder forbindelse i live
-app.post("/heartbeat", (req, res) => {
-  const { deviceId } = req.body || {};
+  return {
+    status: 200,
+    body: {
+      success: true,
+      ok: true,
+      inQueue: true,
+      position,
+      playerId: deviceId,
+    },
+  };
+}
+
+function doHeartbeat(deviceId) {
   if (!deviceId) {
-    return res.status(400).json({ success: false, message: "Missing deviceId" });
+    return { status: 400, body: { success: false, ok: false, message: "Missing deviceId" } };
   }
 
-  // I kø?
   const queuePos = getQueuePosition(deviceId);
   if (queuePos >= 0) {
     queue[queuePos].lastHeartbeat = Date.now();
-    return res.json({ success: true, inQueue: true, position: queuePos + 1 });
+    return {
+      status: 200,
+      body: { success: true, ok: true, inQueue: true, position: queuePos + 1, playerId: deviceId },
+    };
   }
 
-  // I spil?
   const wizardId = getWizardIdByDevice(deviceId);
   if (wizardId >= 0) {
     const player = players[wizardId];
     player.lastHeartbeat = Date.now();
-    return res.json({
-      success: true,
-      inGame: true,
-      wizardId,
-      hp: player.hp,
-      mana: player.mana,
-      alive: player.alive,
-      shield: player.shield,
-      boost: player.boost,
-      gameStarted
-    });
+    return {
+      status: 200,
+      body: {
+        success: true,
+        ok: true,
+        inGame: true,
+        wizardId,
+        playerId: deviceId,
+        hp: player.hp,
+        mana: player.mana,
+        alive: player.alive,
+        shield: player.shield,
+        boost: player.boost,
+        gameStarted,
+      },
+    };
   }
 
-  // Ikke fundet - skal joine igen
-  res.json({ success: false, message: "Not in queue or game. Please join." });
-});
+  return {
+    status: 200,
+    body: { success: false, ok: false, message: "Not in queue or game. Please join." },
+  };
+}
 
-// Arduino caster spell
-app.post("/cast-spell", (req, res) => {
-  const { deviceId, spellKey, targetId } = req.body || {};
-  
+function doCastSpell(deviceId, spellKey, targetId) {
   if (!deviceId || !spellKey) {
-    return res.status(400).json({ success: false, message: "Missing deviceId or spellKey" });
+    return { status: 400, body: { success: false, ok: false, message: "Missing deviceId or spellKey" } };
   }
 
   if (!gameStarted) {
-    return res.json({ success: false, message: "Game not started" });
+    return { status: 200, body: { success: false, ok: false, message: "Game not started" } };
   }
 
   const wizardId = getWizardIdByDevice(deviceId);
   if (wizardId < 0) {
-    return res.json({ success: false, message: "Not in game" });
+    return { status: 200, body: { success: false, ok: false, message: "Not in game" } };
   }
 
   const caster = players[wizardId];
   if (!caster || !caster.alive) {
-    return res.json({ success: false, message: "You are dead" });
+    return { status: 200, body: { success: false, ok: false, message: "You are dead" } };
   }
 
   const spell = SPELLS[spellKey];
   if (!spell) {
-    return res.json({ success: false, message: "Unknown spell" });
+    return { status: 200, body: { success: false, ok: false, message: "Unknown spell" } };
   }
 
   if (caster.mana < spell.manaCost) {
-    return res.json({ success: false, message: "Not enough mana", mana: caster.mana, required: spell.manaCost });
+    return {
+      status: 200,
+      body: {
+        success: false,
+        ok: false,
+        message: "Not enough mana",
+        mana: caster.mana,
+        required: spell.manaCost,
+      },
+    };
   }
 
-  // Træk mana
   caster.mana -= spell.manaCost;
   caster.lastHeartbeat = Date.now();
 
-  // Apply spell
   const results = [];
-  
+
   switch (spell.type) {
     case "single":
       if (targetId !== undefined && players[targetId] && players[targetId].alive) {
@@ -292,7 +325,7 @@ app.post("/cast-spell", (req, res) => {
         const actualDamage = target.shield ? damage * 0.5 : damage;
         target.hp = Math.max(0, target.hp - actualDamage);
         results.push({ targetId, damage: actualDamage, shielded: target.shield });
-        
+
         if (target.hp <= 0) {
           target.alive = false;
           results.push({ targetId, killed: true });
@@ -300,7 +333,7 @@ app.post("/cast-spell", (req, res) => {
         }
       }
       break;
-      
+
     case "aoe":
       for (const [id, target] of Object.entries(players)) {
         const tid = parseInt(id);
@@ -308,20 +341,20 @@ app.post("/cast-spell", (req, res) => {
           const damage = spell.damage * (caster.boost ? 1.5 : 1);
           const actualDamage = target.shield ? damage * 0.5 : damage;
           target.hp = Math.max(0, target.hp - actualDamage);
-          
+
           const result = { targetId: tid, damage: actualDamage, shielded: target.shield, killed: false };
-          
+
           if (target.hp <= 0) {
             target.alive = false;
             result.killed = true;
             broadcast({ type: "player-killed", wizardId: tid, killedBy: wizardId });
           }
-          
+
           results.push(result);
         }
       }
       break;
-      
+
     case "self":
       if (spell.effect === "shield") {
         caster.shield = true;
@@ -342,7 +375,6 @@ app.post("/cast-spell", (req, res) => {
         }, spell.duration);
         results.push({ effect: "boost", duration: spell.duration });
       } else if (spell.damage < 0) {
-        // Heal
         const healAmount = -spell.damage;
         caster.hp = Math.min(caster.maxHp, caster.hp + healAmount);
         results.push({ healed: healAmount });
@@ -350,17 +382,16 @@ app.post("/cast-spell", (req, res) => {
       break;
   }
 
-  broadcast({ 
-    type: "spell-cast", 
-    casterId: wizardId, 
-    spellKey, 
+  broadcast({
+    type: "spell-cast",
+    casterId: wizardId,
+    spellKey,
     targetId,
-    results 
+    results,
   });
-  
+
   broadcastState();
 
-  // Check for winner
   const alivePlayers = Object.entries(players).filter(([_, p]) => p.alive);
   if (alivePlayers.length <= 1) {
     if (alivePlayers.length === 1) {
@@ -373,11 +404,74 @@ app.post("/cast-spell", (req, res) => {
     broadcastState();
   }
 
-  res.json({ 
-    success: true, 
-    manaLeft: caster.mana, 
-    results 
+  return {
+    status: 200,
+    body: { success: true, ok: true, manaLeft: caster.mana, results },
+  };
+}
+
+function resolveDeviceId(body) {
+  return body.deviceId || body.playerId || null;
+}
+
+// Health check
+app.get("/health", (_req, res) => res.json({ ok: true }));
+
+// Unified Arduino controller contract
+app.post("/api/controller/join", (req, res) => {
+  const body = req.body || {};
+  const id = resolveDeviceId(body);
+  if (!id) {
+    return res.status(400).json({ ok: false, success: false, message: "Missing deviceId or playerId" });
+  }
+  const result = doJoinQueue(id);
+  if (body.name) result.body.name = String(body.name).trim().slice(0, 20);
+  res.status(result.status).json(result.body);
+});
+
+app.post("/api/controller/heartbeat", (req, res) => {
+  const id = resolveDeviceId(req.body || {});
+  const result = doHeartbeat(id);
+  res.status(result.status).json(result.body);
+});
+
+app.post("/api/controller/action", (req, res) => {
+  const body = req.body || {};
+  const id = resolveDeviceId(body);
+  const action = body.action;
+  const params = body.params || {};
+
+  if (action === "cast") {
+    const spellKey = params.spellKey || body.spellKey;
+    const targetId = params.targetId !== undefined ? params.targetId : body.targetId;
+    const result = doCastSpell(id, spellKey, targetId);
+    return res.status(result.status).json(result.body);
+  }
+
+  return res.status(400).json({
+    ok: false,
+    success: false,
+    message: "Unknown action. Use action:\"cast\" with params.spellKey",
   });
+});
+
+// Legacy Arduino aliases
+app.post("/join-queue", (req, res) => {
+  const { deviceId } = req.body || {};
+  const result = doJoinQueue(deviceId);
+  res.status(result.status).json(result.body);
+});
+
+app.post("/heartbeat", (req, res) => {
+  const { deviceId } = req.body || {};
+  const result = doHeartbeat(deviceId);
+  res.status(result.status).json(result.body);
+});
+
+app.post("/cast-spell", (req, res) => {
+  const { deviceId, spellKey, targetId } = req.body || {};
+  const result = doCastSpell(deviceId, spellKey, targetId);
+  res.status(result.status).json(result.body);
 });
 
 // Frontend: Start game
@@ -490,6 +584,21 @@ app.get("/my-state/:deviceId", (req, res) => {
   res.json({ success: false, status: "not_connected" });
 });
 
+// Serve SPA static files (production / Docker)
+if (fs.existsSync(PUBLIC_DIR)) {
+  app.use(express.static(PUBLIC_DIR));
+  app.use((req, res, next) => {
+    if (req.method !== "GET" && req.method !== "HEAD") return next();
+    if (req.path.startsWith("/api/") || req.path === "/ws") return next();
+    if (req.path.includes(".")) return next();
+    const indexPath = path.join(PUBLIC_DIR, "index.html");
+    if (fs.existsSync(indexPath)) {
+      return res.sendFile(indexPath);
+    }
+    return next();
+  });
+}
+
 // ===========================================
 // HTTP SERVER + WEBSOCKET
 // ===========================================
@@ -526,20 +635,27 @@ server.listen(PORT, "0.0.0.0", () => {
   console.log("===========================================");
   console.log(`   HTTP:      http://0.0.0.0:${PORT}`);
   console.log(`   WebSocket: ws://0.0.0.0:${PORT}/ws`);
+  console.log(`   Static:    ${fs.existsSync(PUBLIC_DIR) ? PUBLIC_DIR : "(none)"}`);
   console.log("");
-  console.log("   ARDUINO ENDPOINTS:");
-  console.log("   ------------------");
-  console.log("   POST /join-queue     - Join the waiting queue");
-  console.log("   POST /heartbeat      - Keep connection alive");
-  console.log("   POST /cast-spell     - Cast a spell");
-  console.log("   GET  /my-state/:id   - Get your current state");
+  console.log("   CONTROLLER API:");
+  console.log("   ----------------");
+  console.log("   POST /api/controller/join");
+  console.log("   POST /api/controller/heartbeat");
+  console.log("   POST /api/controller/action");
   console.log("");
-  console.log("   FRONTEND ENDPOINTS:");
-  console.log("   --------------------");
-  console.log("   POST /start-game     - Start game with queued players");
-  console.log("   POST /new-game       - Reset and start new game");
-  console.log("   GET  /state          - Get full game state");
-  console.log("   GET  /health         - Health check");
+  console.log("   LEGACY ARDUINO:");
+  console.log("   ---------------");
+  console.log("   POST /join-queue");
+  console.log("   POST /heartbeat");
+  console.log("   POST /cast-spell");
+  console.log("   GET  /my-state/:id");
+  console.log("");
+  console.log("   FRONTEND:");
+  console.log("   ---------");
+  console.log("   POST /start-game");
+  console.log("   POST /new-game");
+  console.log("   GET  /state");
+  console.log("   GET  /health");
   console.log("===========================================");
   console.log("");
 });
