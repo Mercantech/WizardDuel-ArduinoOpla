@@ -4,15 +4,6 @@ services:
     restart: unless-stopped
     networks:
       - dokploy-network
-    labels:
-      - traefik.enable=true
-      - traefik.docker.network=dokploy-network
-      - traefik.http.routers.wizard-duel.rule=Host(`games.mercantec.tech`) && PathPrefix(`/Wizard`)
-      - traefik.http.routers.wizard-duel.entrypoints=web
-      - traefik.http.routers.wizard-duel.priority=100
-      - traefik.http.routers.wizard-duel.middlewares=wizard-strip
-      - traefik.http.middlewares.wizard-strip.stripprefix.prefixes=/Wizard
-      - traefik.http.services.wizard-duel.loadbalancer.server.port=3000
 
 networks:
   dokploy-network:
