@@ -1,6 +1,14 @@
 import './App.css'
-import WizardDuel from "./WizardDuel";
+import ArenaNav from './ArenaNav'
+import WizardDuel from './WizardDuel'
 
 export default function App() {
-  return <WizardDuel />;
+  return (
+    <div className="arena-shell">
+      <ArenaNav active="wizard" />
+      <div className="arena-main">
+        <WizardDuel />
+      </div>
+    </div>
+  )
 }
