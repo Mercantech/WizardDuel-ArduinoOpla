@@ -415,7 +415,8 @@ function resolveDeviceId(body) {
 }
 
 // Health check
-app.get("/health", (_req, res) => res.json({ ok: true }));
+app.get("/health", (_req, res) => res.json({ ok: true, service: "wizard" }));
+app.get("/api/health", (_req, res) => res.json({ ok: true, service: "wizard" }));
 
 // Unified Arduino controller contract
 app.post("/api/controller/join", (req, res) => {
