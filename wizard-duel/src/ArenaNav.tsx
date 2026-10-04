@@ -1,12 +1,13 @@
 import './arena-nav.css'
 
-type Active = 'select' | 'guide' | 'status' | 'bomber' | 'wizard' | 'tetris'
+type Active = 'select' | 'guide' | 'status' | 'bomber' | 'wizard' | 'tetris' | 'pong'
 
 function detectActive(): Active {
   const path = window.location.pathname || ''
   if (/\/Bomberman/i.test(path)) return 'bomber'
   if (/\/Wizard/i.test(path)) return 'wizard'
   if (/\/Tetris/i.test(path)) return 'tetris'
+  if (/\/Pong/i.test(path)) return 'pong'
   if (/\/guide/i.test(path)) return 'guide'
   if (/\/status/i.test(path)) return 'status'
   return 'select'
@@ -39,6 +40,9 @@ export default function ArenaNav({ active }: { active?: Active }) {
         </a>
         <a href="/Tetris/" className={current === 'tetris' ? 'active' : undefined}>
           TETRIS
+        </a>
+        <a href="/Pong/" className={current === 'pong' ? 'active' : undefined}>
+          PONG
         </a>
       </nav>
     </header>
