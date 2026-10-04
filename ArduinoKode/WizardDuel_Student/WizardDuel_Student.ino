@@ -3,6 +3,10 @@
  * WIZARD DUEL - STUDENT STARTER KIT
  * ========================================
  *
+ * NYT: Fælles kit til Bomberman + Wizard i Games-repoet:
+ *   https://github.com/Mercantech/Games/tree/main/arduino/MercantecGamesController
+ *   Sæt GAME_MODE_WIZARD i config.h — denne fil er legacy/reference.
+ *
  * Fælles Arduino-kontrakt (samme som Bomberman):
  *   POST {GAME_BASE_PATH}/api/controller/join
  *   POST {GAME_BASE_PATH}/api/controller/heartbeat
